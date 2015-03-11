@@ -128,35 +128,77 @@ class CommandParser {
     }
 };
 
+CommandParser text_parser;
 
-CommandParser parser;
+class RobotController {
+  void switchBinaryMode() {};
+  void stopCar() {};
+  void disableCar() {};
+  void processSteeringCommand(){
+    byte value = parser->getInt();
+    // проверяем что удалось разобрать число.
+    if (errno!=0)
+      return; 
+    // поворот
+      
+  };
+  void processEngineCommand(){};
+  void processSetCommand(){
+    int key = parser->getKey();
+    if (key == CommandParser::COMMAND_UNKNOWN) 
+      return;
+    int value = parser->getInt();
+    switch(key) {
+      default:
+        break;
+    }
+  };
+  void showInfo(){
+    parser->writeInfo(0, 0, true, 0);
+  };
+  void showVersion(){};
+  
+  public:
+    RobotController() {
+      parser = &text_parser;
+    }
+  
+    CommandParser *parser;
+    void processCommand(int cmd) {
+          
+      switch(cmd) {
+        case CommandParser::CMD_STEERING:
+          processSteeringCommand();
+          break;
+        case CommandParser::CMD_ENGINE:
+          processEngineCommand();
+          break;
+        case CommandParser::CMD_STOP:
+          stopCar();
+          break;
+        case CommandParser::CMD_BINARY_MODE:
+          switchBinaryMode();
+          break;
+        case CommandParser::CMD_SET:
+          processSetCommand();
+          break;
+        case CommandParser::CMD_INFO:
+          showInfo();
+          break;
+        case CommandParser::CMD_DISABLE:
+          disableCar();
+          break;
+        case CommandParser::CMD_VERSION:
+          showVersion();
+          break;
+        default:
+          break;
+      }
+    }
+};
 
-void switchBinaryMode() {};
-void stopCar() {};
-void disableCar() {};
-void processSteeringCommand(){
-  byte value = parser.getInt();
-  // проверяем что удалось разобрать число.
-  if (errno!=0)
-    return; 
-  // поворот
-    
-};
-void processEngineCommand(){};
-void processSetCommand(){
-  int key = parser.getKey();
-  if (key == CommandParser::COMMAND_UNKNOWN) 
-    return;
-  int value = parser.getInt();
-  switch(key) {
-    default:
-      break;
-  }
-};
-void showInfo(){
-  parser.writeInfo(0, 0, true, 0);
-};
-void showVersion(){};
+RobotController controller;
+  
 
 void setup() {
   // put your setup code here, to run once:
@@ -175,7 +217,7 @@ void serialEvent() {
   Serial.write("SE");
   // пока есть данные в порте, читаем и разбираем команды
   while (result != CommandParser::COMMAND_NOT_READY) {
-    result = parser.processSerial();
+    result = controller.parser->processSerial();
     Serial.print("result=");
     Serial.println(result);
     // если нашли в строке команду - запоминаем ее и разбираем следующую строку,
@@ -186,33 +228,5 @@ void serialEvent() {
   // если ничего не распознали, больше ничего не делаем.
   if (cmd == CommandParser::COMMAND_UNKNOWN)
     return;
-    
-  switch(cmd) {
-    case CommandParser::CMD_STEERING:
-      processSteeringCommand();
-      break;
-    case CommandParser::CMD_ENGINE:
-      processEngineCommand();
-      break;
-    case CommandParser::CMD_STOP:
-      stopCar();
-      break;
-    case CommandParser::CMD_BINARY_MODE:
-      switchBinaryMode();
-      break;
-    case CommandParser::CMD_SET:
-      processSetCommand();
-      break;
-    case CommandParser::CMD_INFO:
-      showInfo();
-      break;
-    case CommandParser::CMD_DISABLE:
-      disableCar();
-      break;
-    case CommandParser::CMD_VERSION:
-      showVersion();
-      break;
-    default:
-      break;
-  }
+  controller.processCommand(cmd);
 }
