@@ -162,7 +162,8 @@ class RobotController {
   };
   void disableCar() {};
   void processSteeringCommand(){
-    byte value = parser->getInt();
+    Serial.println("processSteeringCommand");
+    int value = parser->getInt();
     // проверяем что удалось разобрать число.
     if (errno!=0)
       return; 
@@ -171,16 +172,17 @@ class RobotController {
     sync();
   };
   void processEngineCommand(){
-    char dir = parser->getChar();
-    if (errno!=0)
+    Serial.println("processEngineCommand");
+    int value = parser->getInt();
+    Serial.print(value);
+    if (errno!=0) {
+      Serial.print("getInt errno=");
+      Serial.println(errno);
       return; 
-    boolean direction = dir=='F';
-    byte value = parser->getInt();
-    if (errno!=0)
-      return; 
+    }
     
-    front = direction;
-    engine_speed = value;
+    front = value>=0;
+    engine_speed = abs(value);
     sync();
     
   };
