@@ -55,7 +55,6 @@ class CommandParser {
       while(Serial.available()) {
         char input = (char)Serial.read();
 
-        delay(1000);
         Serial.print("pos=");
         Serial.print(position);
         Serial.print("input=");
@@ -92,6 +91,17 @@ class CommandParser {
       return result;
     }
     
+    char getChar() {
+      int argend = getArgEnd();
+      if (argend < 0){
+        errno = 1;
+        return -1;
+      }
+      char result = (char)buffer[argpos];
+      argpos = argend + 1;
+      return result;
+    }
+    
     int getKey() {
       int argend = getArgEnd();
       if (argend < 0){
@@ -119,20 +129,37 @@ class CommandParser {
       return COMMAND_UNKNOWN;
     }
     
-    void writeInfo(int voltage, int rotation, boolean front, int engine_speed) {
+    void writeInfo(int voltage, int rotation, boolean front, int engine_speed, boolean disabled) {
       Serial.print(voltage);
       Serial.print(' ');
       Serial.print(rotation);
       Serial.print(front?" F ":" R ");
-      Serial.println(engine_speed);
+      Serial.print(engine_speed);
+      Serial.println(disabled?" [DISABLED]":" [ENABLED]");
     }
 };
 
 CommandParser text_parser;
 
 class RobotController {
+  int rotation;
+  int voltage;
+  int engine_speed;
+  int version;
+  boolean front;
+  boolean disabled;
+  
+  /**
+  * Осуществляет синхронизацию с мотором и сервой
+  */
+  void sync() {};
   void switchBinaryMode() {};
-  void stopCar() {};
+  void stopCar() {
+    engine_speed = 0;
+    front = true;
+    rotation = 0;
+    sync();
+  };
   void disableCar() {};
   void processSteeringCommand(){
     byte value = parser->getInt();
@@ -140,9 +167,23 @@ class RobotController {
     if (errno!=0)
       return; 
     // поворот
-      
+    rotation = value;
+    sync();
   };
-  void processEngineCommand(){};
+  void processEngineCommand(){
+    char dir = parser->getChar();
+    if (errno!=0)
+      return; 
+    boolean direction = dir=='F';
+    byte value = parser->getInt();
+    if (errno!=0)
+      return; 
+    
+    front = direction;
+    engine_speed = value;
+    sync();
+    
+  };
   void processSetCommand(){
     int key = parser->getKey();
     if (key == CommandParser::COMMAND_UNKNOWN) 
@@ -154,13 +195,18 @@ class RobotController {
     }
   };
   void showInfo(){
-    parser->writeInfo(0, 0, true, 0);
+    parser->writeInfo(voltage, rotation, front, engine_speed, disabled);
   };
   void showVersion(){};
   
   public:
     RobotController() {
       parser = &text_parser;
+      disabled = true;
+      engine_speed = 0;
+      front = true;
+      rotation = 0;
+      version = 0;
     }
   
     CommandParser *parser;
@@ -203,6 +249,7 @@ RobotController controller;
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
+  Serial.println("HELLO");
 }
 
 void loop() {
