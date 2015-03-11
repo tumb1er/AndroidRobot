@@ -28,7 +28,7 @@ class CommandParser {
 
     void clearBuffer() {
       position = 0;
-      buffer[BUFLEN] = '\0';
+      buffer[position] = '\0';
     }
   
     static const int COMMAND_NOT_READY = -2;
@@ -49,13 +49,24 @@ class CommandParser {
     
     int processSerial() {
       int result = COMMAND_NOT_READY;
+      delay(1000);
+      Serial.print("processSerial, ");
+      Serial.println(result);
       while(Serial.available()) {
         char input = (char)Serial.read();
+
+        delay(1000);
+        Serial.print("pos=");
+        Serial.print(position);
+        Serial.print("input=");
+        Serial.println(input);
+
         buffer[position++] = input;
         if (input == '\n') {
           result = parseCommand(buffer);
           if (result >= 0) {
             argpos = CMD_SIZES[result] + 1;
+            clearBuffer();
           } else {
             argpos = 0;
           }
@@ -66,6 +77,7 @@ class CommandParser {
           clearBuffer();
         }
       }
+      return result;
     }
     
     int getInt() {
@@ -95,14 +107,24 @@ class CommandParser {
       
     }
     
-    int parseCommand(char* buffer) {
+    int parseCommand(char* buf) {
       // ищем в начале строки известные команды.
       // возвращаем номер команды от 0 до 7.
+      Serial.print("parseCommand: ");
+      Serial.println(buf);
       for(int i=0; i< COMMAND_COUNT; i++) {
-        if (strncmp(buffer, COMMANDS[i], CMD_SIZES[i]) == 0)
+        if (strncmp(buf, COMMANDS[i], CMD_SIZES[i]) == 0)
           return i;
       }
       return COMMAND_UNKNOWN;
+    }
+    
+    void writeInfo(int voltage, int rotation, boolean front, int engine_speed) {
+      Serial.print(voltage);
+      Serial.print(' ');
+      Serial.print(rotation);
+      Serial.print(front?" F ":" R ");
+      Serial.println(engine_speed);
     }
 };
 
@@ -131,26 +153,31 @@ void processSetCommand(){
       break;
   }
 };
-void showInfo(){};
+void showInfo(){
+  parser.writeInfo(0, 0, true, 0);
+};
 void showVersion(){};
 
 void setup() {
   // put your setup code here, to run once:
-  
+  Serial.begin(9600);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-
+  
 }
 
 void serialEvent() {
   // что-то есть на чтение в COM-порте
   int result = CommandParser::COMMAND_UNKNOWN;
   int cmd = result;
+  Serial.write("SE");
   // пока есть данные в порте, читаем и разбираем команды
   while (result != CommandParser::COMMAND_NOT_READY) {
     result = parser.processSerial();
+    Serial.print("result=");
+    Serial.println(result);
     // если нашли в строке команду - запоминаем ее и разбираем следующую строку,
     // пока не кончатся данные в порте.
     if (result != CommandParser::COMMAND_NOT_READY && result != CommandParser::COMMAND_UNKNOWN)
