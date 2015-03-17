@@ -1,4 +1,19 @@
 #include <errno.h>
+#include <Servo.h> 
+
+#define ENGINE_SPEED      6
+#define ENGINE_DIR        7
+ 
+#define COMMAND_EXPIRE 10000
+#define MAX_SPEED 255
+#define MAX_ANGLE 255
+
+#define STEERING_STEP 8
+#define STEERING_CORRECT -2
+
+#define DEBUG true
+
+Servo steering;
 
 class CommandParser {
   private:
@@ -126,6 +141,7 @@ class CommandParser {
         if (strncmp(buf, COMMANDS[i], CMD_SIZES[i]) == 0)
           return i;
       }
+      clearBuffer();
       return COMMAND_UNKNOWN;
     }
     
@@ -135,13 +151,31 @@ class CommandParser {
       Serial.print(rotation);
       Serial.print(front?" F ":" R ");
       Serial.print(engine_speed);
-      Serial.println(disabled?" [DISABLED]":" [ENABLED]");
+      Serial.println(disabled?" D":" E");
+    }
+    
+    void writeRotation(int angle) {
+      Serial.println(angle);
+    }
+    
+    void writeEngineState(boolean front, int motor) {
+      Serial.print(front?"F ":"R ");
+      Serial.println(motor);
+    }
+    
+    void writeDisabledState(boolean disabled) {
+      Serial.println(disabled?"D":"E");
+    }
+    
+    void writeVersion(int version) {
+      Serial.println(version);
     }
 };
 
 CommandParser text_parser;
 
 class RobotController {
+  // параметры движения
   int rotation;
   int voltage;
   int engine_speed;
@@ -149,26 +183,46 @@ class RobotController {
   boolean front;
   boolean disabled;
   
+  unsigned int last_command;
+  boolean command_applied;
+  
+  // настройки
+  int timeout = 1000;
+  int angle = -2;
+  int steering_scale = 100;
+  
+    
+  CommandParser *parser;
+
   /**
   * Осуществляет синхронизацию с мотором и сервой
   */
-  void sync() {};
+  void sync() {
+    command_applied = true;
+    steering.write(rotation);
+    
+  };
   void switchBinaryMode() {};
   void stopCar() {
     engine_speed = 0;
     front = true;
-    rotation = 0;
+    rotation = 90 + angle;
     sync();
   };
-  void disableCar() {};
+  void disableCar() {
+    disabled = !disabled;
+  parser->writeDisabledState(disabled);  
+  };
   void processSteeringCommand(){
     Serial.println("processSteeringCommand");
     int value = parser->getInt();
     // проверяем что удалось разобрать число.
     if (errno!=0)
       return; 
-    // поворот
-    rotation = value;
+    // поворот - основной угол 90 + коррекционный угол + ограничитель в % * value / 5
+    // при ограничителе в 100% получим диапазон угла поворота в 255/5 градусов.
+    rotation = 90 + angle + steering_scale * value / 500;
+    parser->writeRotation(rotation);
     sync();
   };
   void processEngineCommand(){
@@ -183,6 +237,7 @@ class RobotController {
     
     front = value>=0;
     engine_speed = abs(value);
+    parser->writeEngineState(front, engine_speed);
     sync();
     
   };
@@ -199,7 +254,9 @@ class RobotController {
   void showInfo(){
     parser->writeInfo(voltage, rotation, front, engine_speed, disabled);
   };
-  void showVersion(){};
+  void showVersion(){
+    parser->writeVersion(version);
+  };
   
   public:
     RobotController() {
@@ -209,9 +266,8 @@ class RobotController {
       front = true;
       rotation = 0;
       version = 0;
+      last_command = 0;
     }
-  
-    CommandParser *parser;
     void processCommand(int cmd) {
           
       switch(cmd) {
@@ -242,7 +298,23 @@ class RobotController {
         default:
           break;
       }
+      command_applied = false;
     }
+    
+  void loop() {
+    // если долго не было команд - останавливаемся
+    if (millis() - last_command > COMMAND_EXPIRE) {
+      if (command_applied) {
+        stopCar();
+        command_applied = false;
+      }
+      return; 
+    }
+  }
+  
+  int processSerial() {
+    return parser->processSerial();
+  }
 };
 
 RobotController controller;
@@ -252,11 +324,15 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
   Serial.println("HELLO");
+  // Настраивает выводы платы 6, 7 на вывод сигналов 
+  for(char i = 6; i < 8; i++)     
+      pinMode(i, OUTPUT);  
+  // Рулевое управление
+  steering.attach(9);
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  
+  controller.loop();  
 }
 
 void serialEvent() {
@@ -266,7 +342,7 @@ void serialEvent() {
   Serial.write("SE");
   // пока есть данные в порте, читаем и разбираем команды
   while (result != CommandParser::COMMAND_NOT_READY) {
-    result = controller.parser->processSerial();
+    result = controller.processSerial();
     Serial.print("result=");
     Serial.println(result);
     // если нашли в строке команду - запоминаем ее и разбираем следующую строку,
