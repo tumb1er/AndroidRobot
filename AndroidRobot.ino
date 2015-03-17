@@ -5,13 +5,8 @@
 #define ENGINE_DIR        7
  
 #define COMMAND_EXPIRE 10000
-#define MAX_SPEED 255
-#define MAX_ANGLE 255
 
-#define STEERING_STEP 8
-#define STEERING_CORRECT -2
-
-#define DEBUG true
+#define DEBUG false
 
 Servo steering;
 
@@ -64,17 +59,19 @@ class CommandParser {
     
     int processSerial() {
       int result = COMMAND_NOT_READY;
-      delay(1000);
-      Serial.print("processSerial, ");
-      Serial.println(result);
+      if (DEBUG) {
+        delay(1000);
+        Serial.print("processSerial, ");
+        Serial.println(result);
+      }
       while(Serial.available()) {
         char input = (char)Serial.read();
-
-        Serial.print("pos=");
-        Serial.print(position);
-        Serial.print("input=");
-        Serial.println(input);
-
+        if (DEBUG) {
+          Serial.print("pos=");
+          Serial.print(position);
+          Serial.print("input=");
+          Serial.println(input);
+        }
         buffer[position++] = input;
         if (input == '\n') {
           result = parseCommand(buffer);
@@ -135,8 +132,10 @@ class CommandParser {
     int parseCommand(char* buf) {
       // ищем в начале строки известные команды.
       // возвращаем номер команды от 0 до 7.
-      Serial.print("parseCommand: ");
-      Serial.println(buf);
+      if (DEBUG) {
+        Serial.print("parseCommand: ");
+        Serial.println(buf);
+      }
       for(int i=0; i< COMMAND_COUNT; i++) {
         if (strncmp(buf, COMMANDS[i], CMD_SIZES[i]) == 0)
           return i;
@@ -187,9 +186,12 @@ class RobotController {
   boolean command_applied;
   
   // настройки
-  int timeout = 1000;
+  int timeout = 10000;
   int angle = -2;
   int steering_scale = 100;
+  int min_speed = 10;
+  int top_front_speed = 200;
+  int top_rear_speed = 100;
   
     
   CommandParser *parser;
@@ -214,7 +216,7 @@ class RobotController {
   parser->writeDisabledState(disabled);  
   };
   void processSteeringCommand(){
-    Serial.println("processSteeringCommand");
+    if (DEBUG) Serial.println("processSteeringCommand");
     int value = parser->getInt();
     // проверяем что удалось разобрать число.
     if (errno!=0)
@@ -226,17 +228,35 @@ class RobotController {
     sync();
   };
   void processEngineCommand(){
-    Serial.println("processEngineCommand");
+    if (DEBUG) Serial.println("processEngineCommand");
     int value = parser->getInt();
-    Serial.print(value);
+    if (DEBUG) Serial.print(value);
     if (errno!=0) {
-      Serial.print("getInt errno=");
-      Serial.println(errno);
+      if (DEBUG) {
+        Serial.print("getInt errno=");
+        Serial.println(errno);
+      }
       return; 
     }
     
+    // направление    
     front = value>=0;
-    engine_speed = abs(value);
+    digitalWrite(ENGINE_DIR, front);
+
+    // скорость
+    
+    // диапазон от -127 до 127 переводим в 0..255 + направление
+    engine_speed = abs(value) * 2;
+    // масштабируем входное значение относительно максимальной скорости
+    if (front)
+      engine_speed  = (((unsigned long)(engine_speed / 4)) * ((unsigned long)(top_front_speed / 16))) / 4;
+    else
+      engine_speed  = (((unsigned long)(engine_speed / 4)) * ((unsigned long)(top_rear_speed / 16))) / 4;
+   // зануляем значения меньше минимальной скорости
+    if (engine_speed < min_speed) 
+      engine_speed = 0;
+    analogWrite(ENGINE_SPEED, engine_speed);
+    
     parser->writeEngineState(front, engine_speed);
     sync();
     
@@ -303,7 +323,7 @@ class RobotController {
     
   void loop() {
     // если долго не было команд - останавливаемся
-    if (millis() - last_command > COMMAND_EXPIRE) {
+    if (millis() - last_command > timeout) {
       if (command_applied) {
         stopCar();
         command_applied = false;
@@ -339,12 +359,13 @@ void serialEvent() {
   // что-то есть на чтение в COM-порте
   int result = CommandParser::COMMAND_UNKNOWN;
   int cmd = result;
-  Serial.write("SE");
   // пока есть данные в порте, читаем и разбираем команды
   while (result != CommandParser::COMMAND_NOT_READY) {
     result = controller.processSerial();
-    Serial.print("result=");
-    Serial.println(result);
+    if (DEBUG) {
+      Serial.print("result=");
+      Serial.println(result);
+    }
     // если нашли в строке команду - запоминаем ее и разбираем следующую строку,
     // пока не кончатся данные в порте.
     if (result != CommandParser::COMMAND_NOT_READY && result != CommandParser::COMMAND_UNKNOWN)
