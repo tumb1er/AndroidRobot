@@ -3,6 +3,7 @@
 
 #define ENGINE_SPEED      6
 #define ENGINE_DIR        7
+#define VOLTAGE           5
  
 #define COMMAND_EXPIRE 10000
 
@@ -201,8 +202,11 @@ class RobotController {
   */
   void sync() {
     command_applied = true;
+    if (disabled)
+      return;
     steering.write(rotation);
-    
+    digitalWrite(ENGINE_DIR, front);
+    analogWrite(ENGINE_SPEED, engine_speed);
   };
   void switchBinaryMode() {};
   void stopCar() {
@@ -213,7 +217,7 @@ class RobotController {
   };
   void disableCar() {
     disabled = !disabled;
-  parser->writeDisabledState(disabled);  
+    parser->writeDisabledState(disabled);  
   };
   void processSteeringCommand(){
     if (DEBUG) Serial.println("processSteeringCommand");
@@ -241,22 +245,19 @@ class RobotController {
     
     // направление    
     front = value>=0;
-    digitalWrite(ENGINE_DIR, front);
-
+    
     // скорость
     
     // диапазон от -127 до 127 переводим в 0..255 + направление
-    engine_speed = abs(value) * 2;
-    // масштабируем входное значение относительно максимальной скорости
-    if (front)
-      engine_speed  = (((unsigned long)(engine_speed / 4)) * ((unsigned long)(top_front_speed / 16))) / 4;
-    else
-      engine_speed  = (((unsigned long)(engine_speed / 4)) * ((unsigned long)(top_rear_speed / 16))) / 4;
-   // зануляем значения меньше минимальной скорости
-    if (engine_speed < min_speed) 
-      engine_speed = 0;
-    analogWrite(ENGINE_SPEED, engine_speed);
+    engine_speed = abs(value);
     
+    if (engine_speed > 0) {
+      // масштабируем входное значение относительно максимальной скорости
+      if (front)
+        engine_speed = min(min_speed + ((unsigned long)(top_front_speed - min_speed) * engine_speed) / 128, 127);
+      else
+        engine_speed = min(min_speed + ((unsigned long)(top_rear_speed - min_speed) * engine_speed) / 128, 127);
+    }
     parser->writeEngineState(front, engine_speed);
     sync();
     
@@ -284,10 +285,11 @@ class RobotController {
       disabled = true;
       engine_speed = 0;
       front = true;
-      rotation = 0;
+      rotation = 90 + angle;
       version = 0;
       last_command = 0;
     }
+    
     void processCommand(int cmd) {
           
       switch(cmd) {
@@ -330,6 +332,8 @@ class RobotController {
       }
       return; 
     }
+    float v = map(analogRead(VOLTAGE), 0, 1023, 0, 300);
+    voltage = (int)v;
   }
   
   int processSerial() {
